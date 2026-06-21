@@ -57,7 +57,7 @@ The agent needs an API Key to talk to the AI brain.
    ```env
    API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxx
    BASE_URL=https://openrouter.ai/api/v1
-   MODEL=openrouter/free
+   MODEL=openrouter/owl-alpha
    ```
 4. Save the file. (Note: `.env` is hidden by default and ignored by Git so your key stays 100% safe).
 
