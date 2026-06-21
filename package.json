@@ -1,0 +1,14 @@
+{
+  "name": "react-swe-agent",
+  "version": "1.0.0",
+  "description": "Lean AI SWE agent using the ReAct (Thought → Action → Observation) agentic loop",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "openai": "^4.86.2",
+    "dotenv": "^16.4.7",
+    "chalk": "^5.4.1"
+  }
+}
