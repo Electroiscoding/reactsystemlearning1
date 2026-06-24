@@ -6,6 +6,7 @@
 //
 
 import chalk from "chalk";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { callLLM, MODEL } from "./llm.js";
 import { executeTool } from "./tools.js";
@@ -25,6 +26,17 @@ export async function runAgent(task, maxSteps) {
   // Resolve active workspace directory
   const workdir = process.env.WORKDIR || process.cwd();
   const resolvedWorkdir = resolve(workdir);
+
+  // Print a helpful warning if running nested without WORKDIR configured
+  if (!process.env.WORKDIR) {
+    const parentDir = resolve(process.cwd(), "..");
+    const hasParentGit = existsSync(resolve(parentDir, ".git"));
+    const hasParentPackage = existsSync(resolve(parentDir, "package.json"));
+    if (parentDir !== process.cwd() && (hasParentGit || hasParentPackage)) {
+      console.log(chalk.yellow.bold("\n⚠️  Note: You are running the agent inside a subdirectory."));
+      console.log(chalk.yellow(`   If you want to target your parent project, add ${chalk.cyan("WORKDIR=../")} to your .env file.\n`));
+    }
+  }
 
   // Load memory from previous sessions
   const memoryContext = await getMemoryContext();

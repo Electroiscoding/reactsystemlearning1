@@ -57,9 +57,13 @@ The agent needs an API Key to talk to the AI brain.
    ```env
    API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxx
    BASE_URL=https://openrouter.ai/api/v1
-   MODEL=openrouter/owl-alpha
+   MODEL=openrouter/free
    ```
-4. Save the file. (Note: `.env` is hidden by default and ignored by Git so your key stays 100% safe).
+4. **If you cloned this folder inside an existing project** (to help you edit your own repository), also add this line to the bottom of your `.env` file so the agent targets the parent folder instead of itself:
+   ```env
+   WORKDIR=../
+   ```
+5. Save the file. (Note: `.env` is hidden by default and ignored by Git so your key stays 100% safe).
 
 ---
 
