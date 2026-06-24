@@ -142,6 +142,7 @@ node src/index.js "Find all bugs"
 
 ## 🔒 Safety & Guardrails
 Because the agent can run commands on your terminal, we built in safety rails:
+* **Workspace Isolation & Self-Hiding**: If you clone the agent into a subfolder (like `/agent`), the agent programmatically hides its own directory from its `list_dir` and `grep_search` tools. The AI never sees its own source code, preventing it from getting distracted or editing its own files.
 * **Dangerous Commands**: If the agent tries to run a command containing `rm -rf`, `sudo`, `kill`, etc., it will stop and ask for your permission: `Allow execution? (y/N)`.
 * **Timeout Limits**: Terminal commands automatically timeout after 30 seconds to prevent hanging.
 * **Infinite Loop Prevention**: The agent will automatically stop after 30 steps if it gets stuck.
