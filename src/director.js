@@ -3,18 +3,25 @@
 // ============================================================
 
 import chalk from "chalk";
+import { resolve } from "node:path";
 import { runAgent } from "./agent.js";
 import { callLLM } from "./llm.js";
-import { executeTool } from "./tools.js";
+import { SYSTEM_PROMPT } from "./prompts.js";
+import { getMemoryContext } from "./memory.js";
 
-const DIRECTOR_SYSTEM_PROMPT = `{"role": "director", "content": "You are the Director AI supervising an autonomous software engineering agent."}
-{"rule": "Responsibilities", "action": "Your job is to take a high-level user goal, break it down, and direct the worker agent to execute it step-by-step. After each worker run, analyze the result and decide if the overall goal is fully achieved, tested, and stable."}
-{"rule": "Status Check", "action": "If everything is 100% complete, tested, and stable, respond with: 'STATUS: COMPLETE' followed by a concise summary of what was accomplished. Otherwise, respond with the next highly focused sub-task for the worker agent to execute."}
-{"rule": "Guidance", "action": "Give precise, step-by-step tasks. Do not try to make the worker do everything in one go if the task is complex. Guide them iteratively."}
-{"note": "Output 'STATUS: COMPLETE' ONLY when the entire goal is fully achieved and verified."}`;
+const DIRECTOR_SYSTEM_PROMPT = `You are the Director AI supervising a software engineering agent.
+Your sole job is to act on behalf of the user. You will review the ongoing conversation history and decide what the agent should do next to achieve the user's global goal.
+
+RULES:
+1. If the user's global goal is completely and successfully achieved, respond with "STATUS: COMPLETE" followed by a short summary of the accomplished work.
+2. If the goal is not yet fully achieved, write a direct, highly specific prompt on behalf of the user directing the agent what to implement, fix, or verify next.
+3. Keep your prompt focused and aligned with the user's global goal.
+4. Output ONLY the next prompt or "STATUS: COMPLETE". Do not include conversational filler.`;
 
 /**
- * Run the Director AI loop for autonomous multi-step execution (24/7 Autonomy).
+ * Run the Director AI loop for autonomous 24/7 multi-step execution.
+ * The Director AI acts as a virtual user, prompting the agent iteratively
+ * within the same continuous conversation history.
  *
  * @param {string} globalGoal - The overall high-level goal
  * @param {number} maxCycles - Safety cap on Director loops
@@ -22,63 +29,67 @@ const DIRECTOR_SYSTEM_PROMPT = `{"role": "director", "content": "You are the Dir
  */
 export async function runDirector(globalGoal, maxCycles = 5) {
   console.log(chalk.green.bold("\n🎬 Director AI Activated (24/7 Autonomous Mode)"));
-  console.log(chalk.dim(`   Global Goal: ${globalGoal}`));
+  console.log(chalk.dim(`   Global Goal: "${globalGoal}"`));
   console.log(chalk.dim(`   Max cycles: ${maxCycles}\n`));
   console.log(chalk.dim("═".repeat(60)) + "\n");
 
-  const history = [
-    { role: "system", content: DIRECTOR_SYSTEM_PROMPT },
-    {
-      role: "user",
-      content: `Global Goal: "${globalGoal}"\n\nAnalyze this goal and provide the first highly specific sub-task for the worker agent to execute.`,
-    },
+  // Resolve active workspace directory and load memory
+  const workdir = process.env.WORKDIR || process.cwd();
+  const resolvedWorkdir = resolve(workdir);
+  const memoryContext = await getMemoryContext();
+
+  const workspaceContext = `\n\n## ACTIVE WORKSPACE
+Your active workspace directory is: ${resolvedWorkdir}
+All tool operations (reading, writing, patching, grep, shell commands) are automatically executed relative to this folder.
+Note: The agent's own code folder is completely hidden from your toolbox. You are operating strictly on the user's project codebase.`;
+
+  const systemPrompt = SYSTEM_PROMPT + workspaceContext + memoryContext;
+
+  // Initialize the continuous conversation history for the Worker Agent
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: globalGoal },
   ];
 
   for (let cycle = 1; cycle <= maxCycles; cycle++) {
     console.log(chalk.green.bold(`\n🎬 [Director Cycle ${cycle}/${maxCycles}]`));
 
-    // 1. Ask the Director AI for the next instruction (streamed or synchronous)
-    // We run the Director synchronously to get a clean instruction
-    const directorResponse = await callLLM(history);
-    const instruction = directorResponse.content.trim();
+    // 1. Run the Worker Agent using the continuous conversation history
+    console.log(chalk.cyan(`👷 Worker Agent starting...`));
+    await runAgent(null, null, messages);
 
-    // Check if Director declares task complete
-    if (instruction.includes("STATUS: COMPLETE")) {
+    // 2. Call the Director AI to review history and prompt on behalf of the user
+    console.log(chalk.green(`\n🎬 Director AI reviewing progress...`));
+    
+    const directorMessages = [
+      { role: "system", content: DIRECTOR_SYSTEM_PROMPT },
+      ...messages.filter(m => m.role !== "system"), // pass dialogue history for review
+      {
+        role: "user",
+        content: `Review the progress made toward the global goal: "${globalGoal}". 
+If the goal is fully achieved, output "STATUS: COMPLETE". 
+Otherwise, write the next prompt to send to the agent on behalf of the user.`,
+      }
+    ];
+
+    const directorResponse = await callLLM(directorMessages);
+    const nextPrompt = directorResponse.content.trim();
+
+    if (nextPrompt.includes("STATUS: COMPLETE")) {
       console.log(chalk.green.bold("\n🎉 Director AI declares the global goal FULLY COMPLETE!"));
-      console.log(chalk.green(instruction));
+      console.log(chalk.green(nextPrompt));
       console.log(chalk.dim("\n" + "═".repeat(60) + "\n"));
-      return instruction;
+      return nextPrompt;
     }
 
-    console.log(chalk.green(`   Director Instruction: `) + chalk.white(instruction));
-    history.push(directorResponse);
+    console.log(chalk.green(`\n🎬 Director AI prompt (on behalf of User): `) + chalk.white(nextPrompt));
+    console.log(chalk.dim("\n" + "─".repeat(60)));
 
-    // 2. Execute the Worker Agent on the sub-task
-    console.log(chalk.cyan(`\n👷 Worker Agent starting sub-task...`));
-    const workerResult = await runAgent(instruction);
-
-    // 3. Gather workspace state for the Director to evaluate
-    const gitStatus = await executeTool("run_command", { command: "git status --short" });
-
-    // 4. Construct feedback for the Director
-    const feedback = `[Cycle ${cycle} complete]
-Worker Agent finished the sub-task.
-
-Worker Output Summary:
-${workerResult}
-
-Current Git Status:
-${gitStatus || "(no changes / clean)"}
-
-What is the next sub-task? If everything is complete, tested, and correct, respond with 'STATUS: COMPLETE' and a final summary.`;
-
-    history.push({
-      role: "user",
-      content: feedback,
-    });
+    // 3. Append the Director's prompt to the continuous history as a user message
+    messages.push({ role: "user", content: nextPrompt });
   }
 
-  const msg = `⚠️ Director AI hit the safety cycle limit (${maxCycles}). Stopping to prevent infinite execution.`;
+  const msg = `⚠️ Director AI hit the safety cycle limit (${maxCycles}). Stopping.`;
   console.log(chalk.red.bold(`\n${msg}\n`));
   return msg;
 }

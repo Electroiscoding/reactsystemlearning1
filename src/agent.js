@@ -21,34 +21,37 @@ import { getMemoryContext, recordSession } from "./memory.js";
  * @param {number} maxSteps - Max loop iterations (safety cap)
  * @returns {string} - The agent's final answer
  */
-export async function runAgent(task, maxSteps) {
+export async function runAgent(task, maxSteps, existingMessages) {
   const max = maxSteps || parseInt(process.env.MAX_STEPS) || 30;
 
-  // Resolve active workspace directory
-  const workdir = process.env.WORKDIR || process.cwd();
-  const resolvedWorkdir = resolve(workdir);
+  let messages = existingMessages;
 
-  // Print a helpful warning if running nested without WORKDIR configured
-  if (!process.env.WORKDIR) {
-    const parentDir = resolve(process.cwd(), "..");
-    const hasParentGit = existsSync(resolve(parentDir, ".git"));
-    const hasParentPackage = existsSync(resolve(parentDir, "package.json"));
-    if (parentDir !== process.cwd() && (hasParentGit || hasParentPackage)) {
-      console.log(chalk.yellow.bold("\n⚠️  Note: You are running the agent inside a subdirectory."));
-      console.log(chalk.yellow(`   If you want to target your parent project, add ${chalk.cyan("WORKDIR=../")} to your .env file.\n`));
+  if (!messages) {
+    // Resolve active workspace directory
+    const workdir = process.env.WORKDIR || process.cwd();
+    const resolvedWorkdir = resolve(workdir);
+
+    // Print a helpful warning if running nested without WORKDIR configured
+    if (!process.env.WORKDIR) {
+      const parentDir = resolve(process.cwd(), "..");
+      const hasParentGit = existsSync(resolve(parentDir, ".git"));
+      const hasParentPackage = existsSync(resolve(parentDir, "package.json"));
+      if (parentDir !== process.cwd() && (hasParentGit || hasParentPackage)) {
+        console.log(chalk.yellow.bold("\n⚠️  Note: You are running the agent inside a subdirectory."));
+        console.log(chalk.yellow(`   If you want to target your parent project, add ${chalk.cyan("WORKDIR=../")} to your .env file.\n`));
+      }
     }
-  }
 
-  // Load codebase index if it exists (implements next-gen indexing)
-  let indexContext = "";
-  const indexFile = resolve(resolvedWorkdir, ".agent_index.json");
-  if (existsSync(indexFile)) {
-    try {
-      const indexRaw = await readFile(indexFile, "utf-8");
-      const index = JSON.parse(indexRaw);
-      const filesList = Object.keys(index.files);
-      if (filesList.length > 0) {
-        indexContext = `\n\n## CODEBASE STRUCTURE (Auto-Indexed)
+    // Load codebase index if it exists (implements next-gen indexing)
+    let indexContext = "";
+    const indexFile = resolve(resolvedWorkdir, ".agent_index.json");
+    if (existsSync(indexFile)) {
+      try {
+        const indexRaw = await readFile(indexFile, "utf-8");
+        const index = JSON.parse(indexRaw);
+        const filesList = Object.keys(index.files);
+        if (filesList.length > 0) {
+          indexContext = `\n\n## CODEBASE STRUCTURE (Auto-Indexed)
 You have immediate knowledge of the repository structure. Use this to locate files directly without scanning:
 ${filesList.map(f => {
   const struct = index.files[f].structure || { functions: [], classes: [] };
@@ -57,28 +60,29 @@ ${filesList.map(f => {
   if (struct.functions?.length) details.push(`funcs: [${struct.functions.join(", ")}]`);
   return `- ${f} (${details.join("; ") || "generic text file"})`;
 }).join("\n")}`;
+        }
+      } catch (err) {
+        console.log(chalk.red(`⚠️  Failed to load codebase index: ${err.message}`));
       }
-    } catch (err) {
-      console.log(chalk.red(`⚠️  Failed to load codebase index: ${err.message}`));
     }
-  }
 
-  // Load memory from previous sessions
-  const memoryContext = await getMemoryContext();
+    // Load memory from previous sessions
+    const memoryContext = await getMemoryContext();
 
-  // Dynamically inject workspace and codebase context into the system prompt (JSONL format compliant)
-  const workspaceContext = `\n\n## ACTIVE WORKSPACE
+    // Dynamically inject workspace and codebase context into the system prompt
+    const workspaceContext = `\n\n## ACTIVE WORKSPACE
 Your active workspace directory is: ${resolvedWorkdir}
 All tool operations (reading, writing, patching, grep, shell commands) are automatically executed relative to this folder.
 Note: The agent's own code folder is completely hidden from your toolbox. You are operating strictly on the user's project codebase.`;
 
-  const systemPrompt = SYSTEM_PROMPT + workspaceContext + indexContext + memoryContext;
+    const systemPrompt = SYSTEM_PROMPT + workspaceContext + indexContext + memoryContext;
 
-  // Initialize conversation with system prompt + user task
-  const messages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: task },
-  ];
+    // Initialize conversation with system prompt + user task
+    messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: task },
+    ];
+  }
 
   // Track which tools are used this session (for memory)
   const toolsUsed = new Set();
@@ -86,9 +90,8 @@ Note: The agent's own code folder is completely hidden from your toolbox. You ar
   console.log(chalk.cyan.bold("\n🤖 Agent started\n"));
   console.log(chalk.dim(`   Model: ${MODEL}`));
   console.log(chalk.dim(`   Max steps: ${max}`));
-  console.log(chalk.dim(`   Workspace: ${resolvedWorkdir}`));
-  console.log(chalk.dim(`   Index: ${indexContext ? "Loaded (.agent_index.json)" : "Not indexed (run index_codebase first)"}`));
-  console.log(chalk.dim(`   Task: ${task}\n`));
+  console.log(chalk.dim(`   Memory: ${messages[0].content.includes("MEMORY") ? "loaded" : "none"}`));
+  console.log(chalk.dim(`   Task: ${task || "Continuous conversation loop"}\n`));
   console.log(chalk.dim("─".repeat(60)) + "\n");
 
   for (let step = 1; step <= max; step++) {
