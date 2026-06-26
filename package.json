@@ -1,7 +1,7 @@
 {
-  "name": "react-swe-agent",
-  "version": "1.0.0",
-  "description": "Lean AI SWE agent using the ReAct (Thought → Action → Observation) agentic loop",
+  "name": "swades-agent",
+  "version": "2.0.0",
+  "description": "Swades Agent — autonomous AI software engineering agent using the ReAct loop",
   "type": "module",
   "scripts": {
     "start": "node src/index.js"

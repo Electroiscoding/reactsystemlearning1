@@ -27,7 +27,7 @@ async function getTaskAndMode() {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((res) => {
     console.log(chalk.cyan.bold("\n╔══════════════════════════════════════╗"));
-    console.log(chalk.cyan.bold("║    🧠 ReAct SWE Agent               ║"));
+    console.log(chalk.cyan.bold("║         Swades Agent                ║"));
     console.log(chalk.cyan.bold("╚══════════════════════════════════════╝\n"));
     
     rl.question(chalk.white.bold("What should I do? → "), (taskAnswer) => {

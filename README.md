@@ -1,97 +1,162 @@
-# 🧠 ReAct SWE Agent
+<p align="center">
+  <img src="logos/swades-clean-removebg-preview.png" width="120" alt="Swades Agent logo"/>
+</p>
 
-A production-grade, highly optimized autonomous AI software engineering agent (~800 lines of code) that uses the **ReAct (Thought → Action → Observation)** loop to solve complex coding tasks directly inside your terminal.
+<h1 align="center">Swades Agent</h1>
 
-It features **24/7 Autonomous Supervision**, **Local Codebase Indexing**, **Space-Sensitive Partial Patching**, **Built-in Syntax & Indentation Checkers**, and **Real-time Live Streaming** of thoughts and tool calls.
-
----
-
-## 🚀 Key Features
-
-*   **🎬 24/7 Autonomous Mode (Director AI)**: A high-level Director AI supervises the Worker Agent, breaking complex goals into multi-step sub-tasks, reviewing git status and test logs, and iterating autonomously until the entire project is verified and complete.
-*   **⚡ Next-Gen Codebase Indexing**: The agent automatically scans and maps your codebase on startup, indexing imports, exports, functions, and classes to `.agent_index.json`. The AI starts with deep codebase knowledge, bypassing the need to list directories.
-*   **🔧 Space-Sensitive Partial Patching (`patch_file`)**: Edits existing files by replacing precise blocks of code instead of rewriting entire files. Space-sensitive, preserves indentation, and saves up to 90% in token usage!
-*   **🔒 Heuristic Syntax & Indentation Checker**: Runs automatic, zero-dependency static analysis before saving code. It flags unclosed brackets, mixed tabs/spaces, unexpected indentation jumps, and runs built-in compiler checks (`node --check` for JS, `JSON.parse` for JSON) to self-correct code before execution.
-*   **📺 Real-Time Live Streaming**: Watch the AI's reasoning, thought process, and tool calls stream live in your terminal token-by-token with color-coded previews.
-*   **📝 Structured JSONL Prompts**: System instructions and conversation history are formatted as structured JSON Lines (JSONL), ensuring hyper-predictable behavior and instruction-following.
+<p align="center">
+  Autonomous AI software engineering agent. ReAct loop. Terminal-native. OpenAI-compatible API.
+</p>
 
 ---
 
-## 🚀 Setup & Installation
+## What it does
 
-### Step 1: Install Node.js
-You need **Node.js** (v18+ or v22+) installed on your computer.
-```bash
-node -v
+Swades Agent runs an agentic loop — **Thought → Tool Call → Observation → repeat** — until a coding task is complete. It reads your codebase, writes and patches files, runs shell commands, and searches code, all driven by any OpenAI-compatible LLM provider.
+
+Tokens stream to the terminal as they arrive. No UI. No server. Just a Node.js process.
+
+---
+
+## Architecture
+
 ```
-If not installed, get it from [nodejs.org](https://nodejs.org/).
+src/
+  index.js      CLI entry point — reads task from args or stdin, triggers auto-index, dispatches to agent or director
+  agent.js      ReAct loop — manages message history, streams LLM response, dispatches tool calls
+  director.js   Director loop — supervises the worker agent across multiple cycles in 24/7 mode
+  llm.js        Thin OpenAI-SDK wrapper — streaming-first, reconstructs full message from SSE deltas
+  tools.js      7 tool implementations + heuristic syntax checker + codebase indexer
+  prompts.js    System prompt (JSONL-structured) + tool schemas (OpenAI function-calling format)
+  memory.js     Appends session summaries to .agent_memory.json, injects relevant past context
+```
 
-### Step 2: Clone & Install Dependencies
+**Message flow (single run):**
+```
+index.js → index_codebase() → agent.js loop:
+  [system + memory + task] → LLM (streaming)
+    → text tokens → printed live
+    → tool_call delta → executeTool() → observation → appended to messages
+  repeat until LLM responds with no tool calls → done
+```
+
+**Message flow (24/7 mode `--autonomous`):**
+```
+director.js → cycle 1..N:
+  runAgent(messages)         ← worker resolves a sub-task
+  callLLM(directorMessages)  ← director reviews history, writes next prompt
+  messages.push(nextPrompt)  ← appended as user turn
+  repeat until director outputs "STATUS: COMPLETE"
+```
+
+---
+
+## Requirements
+
+- Node.js v18 or later
+- An API key from any OpenAI-compatible provider (OpenAI, OpenRouter, Groq, Ollama, etc.)
+
+---
+
+## Setup
+
 ```bash
+# 1. Clone
 git clone https://github.com/Electroiscoding/reactsystemlearning1.git
 cd reactsystemlearning1
+
+# 2. Install dependencies (3 packages: openai, dotenv, chalk)
 npm install
+
+# 3. Configure
+cp .env.example .env
+# Edit .env and set your API_KEY, BASE_URL, and MODEL
 ```
 
-### Step 3: Configure your Environment
-1. Create a `.env` file from the template:
-   * **Mac/Linux:** `cp .env.example .env`
-   * **Windows:** `copy .env.example .env`
-2. Open `.env` and add your OpenRouter key:
-   ```env
-   API_KEY=sk-or-v1-your-key-here
-   BASE_URL=https://openrouter.ai/api/v1
-   MODEL=openrouter/free
-   ```
-3. **Important (Nesting in other projects)**: If you clone this agent folder inside your own repository to edit it, add this line to your `.env` so the agent targets your project and not its own folder:
-   ```env
-   WORKDIR=../
-   ```
+### `.env` fields
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `API_KEY` | Yes | — | Your provider API key |
+| `BASE_URL` | No | `https://openrouter.ai/api/v1` | Provider base URL |
+| `MODEL` | No | `openrouter/free` | Model identifier string |
+| `MAX_STEPS` | No | `30` | Max tool-call iterations per agent run |
+| `MAX_OUTPUT_LENGTH` | No | `10000` | Character cap on tool output fed back to LLM |
+| `WORKDIR` | No | `process.cwd()` | Absolute or relative path the agent operates on |
+
+**If you clone this repo inside another project** (e.g. `myproject/swades-agent/`), set `WORKDIR=../` in `.env` so the agent targets your project root, not its own folder.
 
 ---
 
-## 🎮 How to Run
+## Running
 
-You can run the agent in two modes:
+### Single run (default)
+```bash
+# Interactive (task prompt + mode question)
+npm start
 
-### 1. Standard Mode (Worker Only)
-The agent executes the task in a single session and stops when finished.
-*   **Interactive**: `npm start` (choose `N` when asked about 24/7 mode)
-*   **Direct Task**: `node src/index.js "Write a hello world script in JS"`
+# Direct task via argument
+node src/index.js "Refactor the database module to use connection pooling"
+```
 
-### 2. 🎬 24/7 Autonomous Mode (Director Supervised)
-The Director AI will supervise, evaluate, write sub-tasks, run tests, and guide the worker autonomously until the goal is fully achieved.
-*   **Interactive**: `npm start` (choose `Y` when asked about 24/7 mode)
-*   **Direct Task**: `node src/index.js "Create a fully functional calculator app with tests and run it" --autonomous`
+### 24/7 autonomous mode
+```bash
+# Interactive
+npm start  # answer Y to the autonomous mode question
 
----
+# Direct
+node src/index.js "Add a full test suite for the auth module and fix any failures" --autonomous
+```
 
-## 🛠 Tools in the Toolbox
-
-| Tool | Mode | Description |
-|------|------|-------------|
-| `index_codebase` | Read | Generates/updates `.agent_index.json` with class, function, and file structures. |
-| `read_file` | Read | Reads file contents with precise line numbers. |
-| `write_file` | Write | Writes complete content to new files (auto-creates directories). |
-| `patch_file` | Write | Space-sensitive partial block edits to existing files. **Extremely token-efficient.** |
-| `list_dir` | Read | Lists files in workspace (ignores `node_modules`, `.git`, and self-hides). |
-| `grep_search` | Read | Searches for regex patterns across files. |
-| `run_command` | Execute | Executes shell commands with a 30s timeout (dangerous commands require confirmation). |
+The `--autonomous` flag activates the Director loop. The Director AI reviews the accumulated conversation history after each worker run and writes the next task prompt on behalf of the user, iterating until it determines the goal is fully achieved.
 
 ---
 
-## 🔒 Safety & Guardrails
+## Tools
 
-*   **Workspace Isolation & Self-Hiding**: If cloned as a subdirectory (like `/agent`), the agent programmatically filters out its own directory from `list_dir` and `grep_search`. The AI cannot see, read, or alter its own code, preventing folder-trap loops.
-*   **Dangerous Command Blocking**: Shell commands containing `rm -rf`, `sudo`, `kill`, etc. require manual interactive approval.
-*   **Timeout & Step Caps**: Terminal commands automatically time out after 30 seconds. Worker agents are hard-capped at 30 steps per sub-task.
+| Tool | Arguments | Description |
+|---|---|---|
+| `index_codebase` | _(none)_ | Scans workspace, writes `.agent_index.json` with file structure (imports, exports, classes, functions) |
+| `read_file` | `path`, `start_line?`, `end_line?` | Returns file contents with line numbers. Supports partial reads. |
+| `write_file` | `path`, `content` | Writes a new file. Runs syntax + indentation checks on save. |
+| `patch_file` | `path`, `target`, `replacement` | Replaces a unique block within an existing file. Space-sensitive. Fails loudly if target is ambiguous or missing. |
+| `list_dir` | `path`, `recursive?` | Lists directory tree. Skips `node_modules`, `.git`, and the agent's own folder. |
+| `grep_search` | `pattern`, `path`, `include?` | Runs `grep -rnI` across the workspace. Excludes the agent directory. |
+| `run_command` | `command`, `cwd?` | Executes a shell command with 30s timeout. Prompts user confirmation for destructive patterns. |
+
+### Automatic checks on every write
+
+`write_file` and `patch_file` both run static analysis immediately after writing:
+
+- **Bracket matching**: detects unclosed `{`, `(`, `[` and mismatched pairs
+- **Indentation consistency**: detects mixed tabs + spaces; flags sudden indentation jumps
+- **JS/MJS/CJS**: runs `node --check <file>` for compiler-level syntax validation
+- **JSON**: runs `JSON.parse()` on the content
+
+Errors and warnings are returned as part of the tool output so the LLM can self-correct before running commands.
 
 ---
 
-## 🆕 What's New in v2.0 (Advanced Release)
+## Memory
 
-*   **🎬 24/7 Autonomy (Director Loop)**: Let the agent run indefinitely under the supervision of a high-level "Director AI". Run `node src/index.js "Your Goal" --autonomous` to start.
-*   **⚡ Codebase Indexing**: The agent now automatically runs `index_codebase` at startup to create/update `.agent_index.json`, mapping your project structures so it starts with immediate context.
-*   **🔧 Partial File Patching**: The `patch_file` tool allows the AI to perform line-by-line surgical edits, preserving your exact indentation and saving thousands of tokens.
-*   **🔒 Static Syntax Guardrails**: The agent runs automatic syntax and mixed-indentation checks on every file save, self-correcting any compilation issues before they break the build.
-*   **📺 Real-time Streaming**: Enjoy a high-fidelity terminal UI where the AI's thoughts and tool arguments stream live as they are being generated.
+After each completed run, `memory.js` appends a session record to `.agent_memory.json`:
+```json
+{
+  "timestamp": "...",
+  "task": "...",
+  "summary": "...",
+  "toolsUsed": ["read_file", "patch_file", "run_command"]
+}
+```
+
+On the next run, the three most recent sessions are injected into the system prompt, giving the agent continuity across separate invocations.
+
+---
+
+## Safety
+
+- **Dangerous commands** — `rm -rf`, `sudo`, `kill`, `dd if=`, etc. pause execution and require an explicit `y` from the terminal before running.
+- **Step cap** — the worker agent stops after `MAX_STEPS` iterations (default 30) to prevent runaway loops.
+- **Director cycle cap** — the director loop stops after 5 cycles by default (pass `maxCycles` to `runDirector()` to override).
+- **Self-isolation** — when the agent is installed inside the workspace it operates on, it automatically excludes its own directory from `list_dir` and `grep_search` results so the LLM doesn't get confused by its own source files.
+- **Workspace scoping** — all file paths passed to tools are resolved relative to `WORKDIR`, never escaping it via `..` traversal.
