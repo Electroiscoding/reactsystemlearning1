@@ -57,8 +57,8 @@ If not installed, download from [nodejs.org](https://nodejs.org/) or use a versi
 ### Step 2: Clone & Install Dependencies
 
 ```bash
-git clone https://github.com/Electroiscoding/reactsystemlearning1.git
-cd reactsystemlearning1
+git clone https://github.com/Electroiscoding/Swades-Agent.git
+cd Swades-Agent
 npm install
 ```
 
